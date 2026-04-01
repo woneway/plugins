@@ -1,0 +1,11 @@
+{
+  "name": "common-dev",
+  "version": "1.0.0",
+  "description": "Common development environment assets for Claude Code and Codex.",
+  "capabilities": {
+    "skills": "skills/",
+    "agents": "agents/",
+    "rules": "rules/",
+    "commands": "commands/"
+  }
+}

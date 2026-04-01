@@ -1,0 +1,12 @@
+{
+  "name": "plugins-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Unified plugin installer for Claude Code and Codex.",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "bin": {
+    "plugins": "bin/plugins.js"
+  }
+}

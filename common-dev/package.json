@@ -1,0 +1,12 @@
+{
+  "name": "common-dev",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Codex / Claude Code plugin: OpenSpec 工作流门禁 + 通用安全钩子",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

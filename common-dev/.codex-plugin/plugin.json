@@ -1,0 +1,29 @@
+{
+  "name": "common-dev",
+  "version": "1.0.0",
+  "description": "OpenSpec 工作流门禁与通用安全钩子，兼容 Codex 和 Claude Code。",
+  "author": {
+    "name": "lianwu"
+  },
+  "keywords": [
+    "openspec",
+    "workflow",
+    "security",
+    "hooks",
+    "common"
+  ],
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "common-dev",
+    "shortDescription": "OpenSpec gate + security hooks",
+    "longDescription": "为 Codex 与 Claude Code 提供 OpenSpec 变更门禁、API Key 检测和会话引导钩子。",
+    "developerName": "lianwu",
+    "category": "Development",
+    "defaultPrompt": [
+      "Block code changes until OpenSpec tasks.md is ready.",
+      "Detect hard-coded API keys before file writes and git commits.",
+      "Guide coding requests into the OpenSpec workflow."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

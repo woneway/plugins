@@ -1,0 +1,11 @@
+{
+  "name": "multi-plugin",
+  "version": "2.0.0",
+  "description": "Fixture plugin with multiple capabilities.",
+  "capabilities": {
+    "skills": "skills/",
+    "agents": "agents/",
+    "rules": "rules/",
+    "commands": "commands/"
+  }
+}

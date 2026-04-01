@@ -1,0 +1,20 @@
+{
+  "name": "lianwu-plugins",
+  "interface": {
+    "displayName": "lianwu plugins"
+  },
+  "plugins": [
+    {
+      "name": "common-dev",
+      "source": {
+        "source": "local",
+        "path": "./common-dev"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Development"
+    }
+  ]
+}

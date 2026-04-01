@@ -1,0 +1,7 @@
+{
+  "name": "common-dev",
+  "version": "1.0.0",
+  "description": "通用开发环境：gstack 工作流、API Key 安全钩子，user scope 全局生效",
+  "author": { "name": "lianwu" },
+  "keywords": ["workflow", "gstack", "security", "common"]
+}
