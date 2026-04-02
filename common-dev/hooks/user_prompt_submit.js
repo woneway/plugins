@@ -67,7 +67,8 @@ if (!hasCodingIntent(prompt)) {
   process.exit(0);
 }
 
-const repoRoot = process.cwd();
+const { getRepoRoot } = require("./lib/repo_root");
+const repoRoot = getRepoRoot();
 const spec = getOpenSpecState(repoRoot);
 
 let additionalContext = "";

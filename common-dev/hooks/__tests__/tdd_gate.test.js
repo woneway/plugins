@@ -153,6 +153,24 @@ describe("checkTddGate", () => {
     expect(log.filePath).toBe("lib/foo.js");
   });
 
+  test("TDD_SKIP=1 日志写入失败 → stderr 包含 [WARN]", () => {
+    process.env.TDD_SKIP = "1";
+    // 用文件占位 .claude 路径使 mkdirSync 失败
+    fs.writeFileSync(path.join(tmpDir, ".claude"), "block");
+
+    const stderrChunks = [];
+    const origWrite = process.stderr.write;
+    process.stderr.write = (chunk) => { stderrChunks.push(chunk); };
+    try {
+      const result = checkTddGate("lib/foo.js", tmpDir, "ready_to_apply");
+      expect(result).toBeNull(); // 仍然放行
+      const output = stderrChunks.join("");
+      expect(output).toContain("[WARN] tdd_gate: skip log write failed");
+    } finally {
+      process.stderr.write = origWrite;
+    }
+  });
+
   test("TDD_SKIP 未设置时正常检查", () => {
     const result = checkTddGate("lib/foo.js", tmpDir, "ready_to_apply");
     expect(result).not.toBeNull();

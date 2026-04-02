@@ -4,13 +4,14 @@
 const { existsSync } = require("fs");
 const { join } = require("path");
 const os = require("os");
+const { getRepoRoot } = require("./lib/repo_root");
 
 const gstackOk = [
   join(os.homedir(), ".claude/skills/office-hours"),
   join(os.homedir(), ".codex/skills/office-hours"),
 ].some((dir) => existsSync(dir));
 const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT ?? process.env.CODEX_PLUGIN_ROOT ?? "";
-const repoRoot = process.cwd();
+const repoRoot = getRepoRoot();
 const hasOpenSpec = existsSync(join(repoRoot, "openspec"));
 
 // --- 构建上下文 ---

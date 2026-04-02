@@ -50,8 +50,8 @@ function getOpenSpecState(repoRoot) {
       allChanges: allNames,
       planningChanges: planningOnly.map((c) => c.name),
     };
-  } catch {
-    // fail open：意外错误时不阻断操作
+  } catch (e) {
+    process.stderr.write(`[WARN] openspec: state read failed - ${e.message}\n`);
     return { state: "not_initialized" };
   }
 }
@@ -66,4 +66,56 @@ function isOpenSpecPath(filePath, repoRoot) {
   return rel.startsWith("openspec" + path.sep) || rel === "openspec";
 }
 
-module.exports = { getOpenSpecState, isOpenSpecPath };
+/**
+ * 从 tasks.md 内容中提取文件路径和目录前缀
+ *
+ * 提取规则：
+ *   1. backtick 包裹的路径（含 / 的非 URL、非 openspec 路径）
+ *   2. 含 / 且有文件扩展名的裸路径
+ *   3. 上述路径的目录前缀
+ *
+ * @param {string} tasksContent - tasks.md 文件内容
+ * @returns {string[]} 去重的路径列表（文件路径 + 目录前缀）
+ */
+function extractPathsFromTasks(tasksContent) {
+  if (!tasksContent) return [];
+
+  const filePaths = new Set();
+
+  // 1. backtick 包裹的路径
+  for (const match of tasksContent.matchAll(/`([^`\n]+)`/g)) {
+    const candidate = match[1].trim();
+    if (isExtractablePath(candidate)) {
+      filePaths.add(candidate);
+    }
+  }
+
+  // 2. 裸路径：含 / 且有扩展名的 token
+  for (const match of tasksContent.matchAll(/(?:^|[\s(])([a-zA-Z0-9_.\-/]+\/[a-zA-Z0-9_.\-/]+\.\w+)(?=[\s,;:)}\]\n]|$)/gm)) {
+    const candidate = match[1];
+    if (isExtractablePath(candidate)) {
+      filePaths.add(candidate);
+    }
+  }
+
+  // 3. 目录前缀
+  const dirs = new Set();
+  for (const p of filePaths) {
+    const dir = p.replace(/\/[^/]+$/, "");
+    if (dir && dir !== p && dir.length > 0) {
+      dirs.add(dir);
+    }
+  }
+
+  return [...filePaths, ...dirs];
+}
+
+function isExtractablePath(str) {
+  if (!str || !str.includes("/")) return false;
+  if (/^https?:\/\//.test(str)) return false;
+  if (/^openspec\//.test(str)) return false;
+  if (/\s/.test(str)) return false;
+  return /^[a-zA-Z0-9_.\/\-]+$/.test(str);
+}
+
+module.exports = { getOpenSpecState, isOpenSpecPath, extractPathsFromTasks };

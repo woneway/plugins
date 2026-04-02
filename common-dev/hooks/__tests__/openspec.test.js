@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const { getOpenSpecState, isOpenSpecPath } = require("../lib/openspec");
+const { getOpenSpecState, isOpenSpecPath, extractPathsFromTasks } = require("../lib/openspec");
 
 function createTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "openspec-test-"));
@@ -96,6 +96,24 @@ describe("getOpenSpecState", () => {
     expect(result.changes).toEqual(expect.arrayContaining(["feat-a", "feat-b"]));
     expect(result.planningChanges).toEqual([]);
   });
+
+  test("异常时 stderr 包含 [WARN] 且返回 not_initialized", () => {
+    // 用文件占位 changes 路径使 readdirSync 失败
+    fs.mkdirSync(path.join(tmpDir, "openspec"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "openspec/changes"), "block");
+
+    const stderrChunks = [];
+    const origWrite = process.stderr.write;
+    process.stderr.write = (chunk) => { stderrChunks.push(chunk); };
+    try {
+      const result = getOpenSpecState(tmpDir);
+      expect(result.state).toBe("not_initialized");
+      const output = stderrChunks.join("");
+      expect(output).toContain("[WARN] openspec: state read failed");
+    } finally {
+      process.stderr.write = origWrite;
+    }
+  });
 });
 
 describe("isOpenSpecPath", () => {
@@ -112,5 +130,75 @@ describe("isOpenSpecPath", () => {
   test("空路径返回 false", () => {
     expect(isOpenSpecPath("", "/repo")).toBe(false);
     expect(isOpenSpecPath(null, "/repo")).toBe(false);
+  });
+});
+
+describe("extractPathsFromTasks", () => {
+  test("提取 backtick 包裹的路径", () => {
+    const content = "- [x] 1.1 `common-dev/hooks/pre_tool_use.js` — fix\n- [ ] 1.2 `common-dev/hooks/lib/openspec.js` — update";
+    const paths = extractPathsFromTasks(content);
+    expect(paths).toContain("common-dev/hooks/pre_tool_use.js");
+    expect(paths).toContain("common-dev/hooks/lib/openspec.js");
+  });
+
+  test("提取目录前缀", () => {
+    const content = "- [x] `common-dev/hooks/lib/verify_gate.js` — expand";
+    const paths = extractPathsFromTasks(content);
+    expect(paths).toContain("common-dev/hooks/lib/verify_gate.js");
+    expect(paths).toContain("common-dev/hooks/lib");
+  });
+
+  test("排除 URL", () => {
+    const content = "- 参考 `https://example.com/path/to/doc` 实现";
+    const paths = extractPathsFromTasks(content);
+    expect(paths).not.toContain("https://example.com/path/to/doc");
+    expect(paths).toEqual([]);
+  });
+
+  test("排除 openspec/ 路径", () => {
+    const content = "- 修改 `openspec/changes/my-feature/tasks.md`";
+    const paths = extractPathsFromTasks(content);
+    expect(paths).not.toContain("openspec/changes/my-feature/tasks.md");
+    expect(paths).toEqual([]);
+  });
+
+  test("空内容返回空数组", () => {
+    expect(extractPathsFromTasks("")).toEqual([]);
+    expect(extractPathsFromTasks(null)).toEqual([]);
+    expect(extractPathsFromTasks(undefined)).toEqual([]);
+  });
+
+  test("无路径的内容返回空数组", () => {
+    const content = "- [ ] 实现新功能\n- [ ] 编写测试";
+    expect(extractPathsFromTasks(content)).toEqual([]);
+  });
+
+  test("提取裸路径（含 / 和扩展名）", () => {
+    const content = "修改 common-dev/hooks/lib/api_key_check.js 中的检测逻辑";
+    const paths = extractPathsFromTasks(content);
+    expect(paths).toContain("common-dev/hooks/lib/api_key_check.js");
+  });
+
+  test("不提取不含 / 的路径", () => {
+    const content = "- 修改 `package.json` 和 `index.js`";
+    const paths = extractPathsFromTasks(content);
+    expect(paths).toEqual([]);
+  });
+
+  test("去重：同一路径只出现一次", () => {
+    const content = "- `src/lib/foo.js` 需要修改\n- 再次检查 `src/lib/foo.js`";
+    const paths = extractPathsFromTasks(content);
+    const fooCount = paths.filter(p => p === "src/lib/foo.js").length;
+    expect(fooCount).toBe(1);
+  });
+
+  test("多层目录前缀只取直接父目录", () => {
+    const content = "- `a/b/c/d.js` 需要修改";
+    const paths = extractPathsFromTasks(content);
+    expect(paths).toContain("a/b/c/d.js");
+    expect(paths).toContain("a/b/c");
+    // 不递归提取 a/b 和 a
+    expect(paths).not.toContain("a/b");
+    expect(paths).not.toContain("a");
   });
 });

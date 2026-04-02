@@ -90,8 +90,8 @@ function checkTddGate(filePath, repoRoot, openspecState) {
         filePath,
       };
       fs.appendFileSync(logPath, JSON.stringify(entry) + "\n");
-    } catch {
-      // 日志写入失败不阻断
+    } catch (e) {
+      process.stderr.write(`[WARN] tdd_gate: skip log write failed - ${e.message}\n`);
     }
     return null;
   }

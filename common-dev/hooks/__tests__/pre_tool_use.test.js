@@ -1,4 +1,4 @@
-const { execSync } = require("child_process");
+const { execSync, spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -33,6 +33,21 @@ function runHook(input, cwd, env = {}) {
       stderr: err.stderr ?? "",
     };
   }
+}
+
+// spawnSync 版本：exit 0 时也能捕获 stderr
+function runHookCapturingStderr(input, cwd, env = {}) {
+  const result = spawnSync("node", [HOOK_PATH], {
+    input: typeof input === "string" ? input : JSON.stringify(input),
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+  return {
+    exitCode: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
 }
 
 describe("pre_tool_use hook", () => {
@@ -444,6 +459,30 @@ describe("pre_tool_use hook", () => {
     expect(result.stderr).toMatch(/VERIFY GATE/);
   });
 
+  // --- Fail-open warning 审计 ---
+
+  test("stdin 解析失败 → exit 0 + stderr 包含 [WARN]", () => {
+    const result = runHookCapturingStderr("not json", tmpDir);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("[WARN] pre_tool_use: stdin parse failed");
+  });
+
+  test("OPENSPEC_SKIP 日志目录不可写 → exit 0 + stderr 包含 [WARN]", () => {
+    // 创建一个文件占据 .claude 路径，使 mkdirSync 失败
+    fs.writeFileSync(path.join(tmpDir, ".claude"), "block");
+    const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
+    fs.mkdirSync(changeDir, { recursive: true });
+    fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+
+    const result = runHookCapturingStderr(
+      { tool_name: "Edit", tool_input: { file_path: "src/index.js", new_string: "hello" } },
+      tmpDir,
+      { OPENSPEC_SKIP: "1" }
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("[WARN] openspec_skip: log write failed");
+  });
+
   test("Bash archive mv 已 verify → 放行", () => {
     const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
     fs.mkdirSync(changeDir, { recursive: true });
@@ -465,5 +504,159 @@ describe("pre_tool_use hook", () => {
       tmpDir
     );
     expect(result.exitCode).toBe(0);
+  });
+
+  // --- Change-scope binding 测试 ---
+
+  describe("change-scope binding", () => {
+    let scopeDir;
+
+    beforeEach(() => {
+      scopeDir = createTempDir();
+      // 创建一个 ready_to_apply 的 change
+      const changeDir = path.join(scopeDir, "openspec/changes/my-feature");
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(changeDir, "tasks.md"),
+        "- [x] `src/lib/foo.js` — implement\n- [x] `src/lib/bar.js` — implement"
+      );
+      // 创建 current-change 标记
+      fs.mkdirSync(path.join(scopeDir, ".claude"), { recursive: true });
+      fs.writeFileSync(path.join(scopeDir, ".claude/current-change"), "my-feature");
+    });
+
+    afterEach(() => {
+      fs.rmSync(scopeDir, { recursive: true, force: true });
+    });
+
+    test("scope 内文件放行", () => {
+      // 创建对应测试文件使 TDD gate 通过
+      const testDir = path.join(scopeDir, "src/lib/__tests__");
+      fs.mkdirSync(testDir, { recursive: true });
+      fs.writeFileSync(path.join(testDir, "foo.test.js"), "test('x', () => {})");
+
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "src/lib/foo.js", new_string: "code" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(0);
+    });
+
+    test("scope 外文件阻断", () => {
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "other/baz.js", new_string: "code" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain("[SCOPE]");
+    });
+
+    test("测试文件配对放行：__tests__/<name>.test.js", () => {
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "src/lib/__tests__/foo.test.js", new_string: "test" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(0);
+    });
+
+    test("测试文件配对放行：<name>.test.js 同级目录", () => {
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "src/lib/foo.test.js", new_string: "test" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(0);
+    });
+
+    test("测试文件配对放行：<name>.spec.js", () => {
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "src/lib/bar.spec.js", new_string: "test" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(0);
+    });
+
+    test("目录前缀匹配：scope 内目录的子文件放行", () => {
+      const testDir = path.join(scopeDir, "src/lib/__tests__");
+      fs.mkdirSync(testDir, { recursive: true });
+      fs.writeFileSync(path.join(testDir, "utils.test.js"), "test('x', () => {})");
+
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "src/lib/utils.js", new_string: "code" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(0);
+    });
+
+    test("空 paths → warn + fallback 放行", () => {
+      const changeDir = path.join(scopeDir, "openspec/changes/my-feature");
+      fs.writeFileSync(path.join(changeDir, "tasks.md"), "- [x] 实现新功能\n- [x] 编写测试");
+      const testDir = path.join(scopeDir, "src/__tests__");
+      fs.mkdirSync(testDir, { recursive: true });
+      fs.writeFileSync(path.join(testDir, "index.test.js"), "test('x', () => {})");
+
+      const result = runHookCapturingStderr(
+        { tool_name: "Edit", tool_input: { file_path: "src/index.js", new_string: "code" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toContain("[WARN] change-scope: no paths extracted");
+    });
+
+    test("current-change 不存在 + 单 change → 自动绑定 + scope 内放行", () => {
+      fs.unlinkSync(path.join(scopeDir, ".claude/current-change"));
+      const testDir = path.join(scopeDir, "src/lib/__tests__");
+      fs.mkdirSync(testDir, { recursive: true });
+      fs.writeFileSync(path.join(testDir, "foo.test.js"), "test('x', () => {})");
+
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "src/lib/foo.js", new_string: "code" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(0);
+      // 验证自动写入 marker
+      expect(fs.existsSync(path.join(scopeDir, ".claude/current-change"))).toBe(true);
+      expect(fs.readFileSync(path.join(scopeDir, ".claude/current-change"), "utf8")).toBe("my-feature");
+    });
+
+    test("current-change 不存在 + 单 change → 自动绑定 + scope 外阻断", () => {
+      fs.unlinkSync(path.join(scopeDir, ".claude/current-change"));
+
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "other/baz.js", new_string: "code" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain("[SCOPE]");
+    });
+
+    test("current-change 不存在 + 多 change → fallback 放行", () => {
+      fs.unlinkSync(path.join(scopeDir, ".claude/current-change"));
+      // 添加第二个 ready change
+      const changeDir2 = path.join(scopeDir, "openspec/changes/other-feature");
+      fs.mkdirSync(changeDir2, { recursive: true });
+      fs.writeFileSync(path.join(changeDir2, "tasks.md"), "- [x] `other/thing.js` — implement");
+      const testDir = path.join(scopeDir, "src/lib/__tests__");
+      fs.mkdirSync(testDir, { recursive: true });
+      fs.writeFileSync(path.join(testDir, "foo.test.js"), "test('x', () => {})");
+
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "src/lib/foo.js", new_string: "code" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(0);
+    });
+
+    test("current-change 指向已删除 change → fallback 放行", () => {
+      fs.writeFileSync(path.join(scopeDir, ".claude/current-change"), "deleted-feature");
+      const testDir = path.join(scopeDir, "src/lib/__tests__");
+      fs.mkdirSync(testDir, { recursive: true });
+      fs.writeFileSync(path.join(testDir, "foo.test.js"), "test('x', () => {})");
+
+      const result = runHook(
+        { tool_name: "Edit", tool_input: { file_path: "src/lib/foo.js", new_string: "code" } },
+        scopeDir
+      );
+      expect(result.exitCode).toBe(0);
+    });
   });
 });
