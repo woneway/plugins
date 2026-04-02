@@ -18,8 +18,9 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 // 匹配: mv openspec/changes/<name> openspec/changes/archive/...
+// 支持 ./前缀、引号包裹、command 前缀等变体
 const ARCHIVE_PATTERN =
-  /\bmv\s+(openspec\/changes\/([^/\s]+))\s+openspec\/changes\/archive\//;
+  /\bmv\s+\.?\/?openspec\/changes\/([^/\s"']+)\s+["']?\.?\/?openspec\/changes\/archive\//;
 
 /**
  * 检查 bash 命令是否触发 verify gate。
@@ -35,12 +36,15 @@ function checkVerifyGate(command, repoRoot) {
     return null;
   }
 
-  const match = command.match(ARCHIVE_PATTERN);
+  // 规范化命令：去掉 command 前缀
+  const normalized = command.replace(/^\s*command\s+/, "");
+
+  const match = normalized.match(ARCHIVE_PATTERN);
   if (!match) {
     return null; // 非 archive 操作，放行
   }
 
-  const changeName = match[2];
+  const changeName = match[1];
   const stateFile = path.join(
     repoRoot,
     "openspec",
@@ -67,9 +71,33 @@ function checkVerifyGate(command, repoRoot) {
     };
   }
 
-  // commit 不匹配 → verify 已过期
+  // 必填字段校验：result 必须是 pass 或 warn
+  if (!state.result || !["pass", "warn"].includes(state.result)) {
+    return {
+      block: true,
+      reason: `[VERIFY GATE] 归档被阻断：verify 状态文件无效（result 字段缺失或不合法）。\n请重新运行 /opsx:verify。`,
+    };
+  }
+
+  // 必填字段校验：commit 必须存在
+  if (!state.commit) {
+    return {
+      block: true,
+      reason: `[VERIFY GATE] 归档被阻断：verify 状态文件缺少 commit 字段。\n请重新运行 /opsx:verify。`,
+    };
+  }
+
+  // git HEAD 获取失败 → fail-closed
   const currentCommit = getCurrentCommit();
-  if (currentCommit && state.commit && state.commit !== currentCommit) {
+  if (!currentCommit) {
+    return {
+      block: true,
+      reason: `[VERIFY GATE] 归档被阻断：无法获取 git HEAD，无法验证 verify 结果是否过期。`,
+    };
+  }
+
+  // commit 不匹配 → verify 已过期
+  if (state.commit !== currentCommit) {
     return {
       block: true,
       reason: `[VERIFY GATE] 归档被阻断：verify 结果已过期（verify 后有新提交）。\n请重新运行 /opsx:verify。`,

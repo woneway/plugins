@@ -117,7 +117,71 @@ describe("checkVerifyGate", () => {
     expect(result.reason).toMatch(/损坏/);
   });
 
-  test("git HEAD 获取失败时不因此阻断（commit 为 null 时跳过比对）", () => {
+  // --- Bug 2: 畸形状态文件应被阻断 ---
+
+  test("空对象状态文件应阻断", () => {
+    writeStateFile(tmpDir, "my-feature", {});
+    const result = checkVerifyGate(ARCHIVE_CMD("my-feature"), tmpDir);
+    expect(result).not.toBeNull();
+    expect(result.block).toBe(true);
+  });
+
+  test("无效 result 值应阻断", () => {
+    writeStateFile(tmpDir, "my-feature", {
+      result: "garbage",
+      userConfirmed: false,
+      commit: CURRENT_COMMIT,
+    });
+    const result = checkVerifyGate(ARCHIVE_CMD("my-feature"), tmpDir);
+    expect(result).not.toBeNull();
+    expect(result.block).toBe(true);
+  });
+
+  test("缺少 commit 字段应阻断", () => {
+    writeStateFile(tmpDir, "my-feature", {
+      result: "pass",
+      userConfirmed: true,
+    });
+    const result = checkVerifyGate(ARCHIVE_CMD("my-feature"), tmpDir);
+    expect(result).not.toBeNull();
+    expect(result.block).toBe(true);
+  });
+
+  // --- Bug 3: 命令变体应被正确匹配 ---
+
+  test("带 ./ 前缀的路径应匹配", () => {
+    const result = checkVerifyGate(
+      "mv ./openspec/changes/my-feature openspec/changes/archive/2026-04-02-my-feature",
+      tmpDir
+    );
+    expect(result).not.toBeNull();
+    expect(result.block).toBe(true);
+    expect(result.reason).toMatch(/未运行 verify/);
+  });
+
+  test("带引号的路径应匹配", () => {
+    const result = checkVerifyGate(
+      'mv openspec/changes/my-feature "openspec/changes/archive/2026-04-02-my-feature"',
+      tmpDir
+    );
+    expect(result).not.toBeNull();
+    expect(result.block).toBe(true);
+    expect(result.reason).toMatch(/未运行 verify/);
+  });
+
+  test("带 command 前缀应匹配", () => {
+    const result = checkVerifyGate(
+      "command mv openspec/changes/my-feature openspec/changes/archive/2026-04-02-my-feature",
+      tmpDir
+    );
+    expect(result).not.toBeNull();
+    expect(result.block).toBe(true);
+    expect(result.reason).toMatch(/未运行 verify/);
+  });
+
+  // --- Bug 4: git 不可用时应 fail-closed ---
+
+  test("git HEAD 获取失败时应阻断（fail-closed）", () => {
     execSync.mockImplementation(() => {
       throw new Error("not a git repo");
     });
@@ -127,6 +191,9 @@ describe("checkVerifyGate", () => {
       commit: "abc1234",
       timestamp: new Date().toISOString(),
     });
-    expect(checkVerifyGate(ARCHIVE_CMD("my-feature"), tmpDir)).toBeNull();
+    const result = checkVerifyGate(ARCHIVE_CMD("my-feature"), tmpDir);
+    expect(result).not.toBeNull();
+    expect(result.block).toBe(true);
+    expect(result.reason).toMatch(/git/i);
   });
 });
