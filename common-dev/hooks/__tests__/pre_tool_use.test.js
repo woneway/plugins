@@ -242,6 +242,53 @@ describe("pre_tool_use hook", () => {
     expect(result.exitCode).toBe(2);
   });
 
+  // --- Bash repo 外路径放行 ---
+
+  test("Bash touch ~/.gstack/ + no_active_change → exit 0（Bash repo 外路径放行）", () => {
+    fs.mkdirSync(path.join(tmpDir, "openspec/changes"), { recursive: true });
+    const result = runHook(
+      { tool_name: "Bash", tool_input: { command: `touch ${path.join(os.homedir(), ".gstack/sessions/12345")}` } },
+      tmpDir
+    );
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("Bash echo >> ~/.gstack/analytics/ + no_active_change → exit 0（Bash repo 外路径放行）", () => {
+    fs.mkdirSync(path.join(tmpDir, "openspec/changes"), { recursive: true });
+    const result = runHook(
+      { tool_name: "Bash", tool_input: { command: `echo '{"skill":"ship"}' >> ${path.join(os.homedir(), ".gstack/analytics/skill-usage.jsonl")}` } },
+      tmpDir
+    );
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("Bash mkdir ~/.gstack/ + no_active_change → exit 0（Bash repo 外路径放行）", () => {
+    fs.mkdirSync(path.join(tmpDir, "openspec/changes"), { recursive: true });
+    const result = runHook(
+      { tool_name: "Bash", tool_input: { command: `mkdir -p ${path.join(os.homedir(), ".gstack/sessions")}` } },
+      tmpDir
+    );
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("Bash 混合 repo 内外路径 + no_active_change → exit 2（不放行）", () => {
+    fs.mkdirSync(path.join(tmpDir, "openspec/changes"), { recursive: true });
+    const result = runHook(
+      { tool_name: "Bash", tool_input: { command: `cp ${path.join(os.homedir(), ".gstack/template.js")} src/new-file.js` } },
+      tmpDir
+    );
+    expect(result.exitCode).toBe(2);
+  });
+
+  test("Bash 写源文件仍被拦截（不受外部路径放行影响）", () => {
+    fs.mkdirSync(path.join(tmpDir, "openspec/changes"), { recursive: true });
+    const result = runHook(
+      { tool_name: "Bash", tool_input: { command: "echo 'hack' > src/index.js" } },
+      tmpDir
+    );
+    expect(result.exitCode).toBe(2);
+  });
+
   // --- Content API Key Check ---
 
   test("Write 含 API Key → exit 2", () => {
