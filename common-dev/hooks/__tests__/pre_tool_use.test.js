@@ -72,6 +72,10 @@ describe("pre_tool_use hook", () => {
     const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
     fs.mkdirSync(changeDir, { recursive: true });
     fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+    // TDD gate 要求对应测试文件存在
+    const testDir = path.join(tmpDir, "src", "__tests__");
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(path.join(testDir, "index.test.js"), "test('x', () => {})");
 
     const result = runHook({ tool_name: "Edit", tool_input: { file_path: "src/index.js" } }, tmpDir);
     expect(result.exitCode).toBe(0);
@@ -165,6 +169,9 @@ describe("pre_tool_use hook", () => {
     const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
     fs.mkdirSync(changeDir, { recursive: true });
     fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+    const testDir = path.join(tmpDir, "src", "__tests__");
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(path.join(testDir, "index.test.js"), "test('x', () => {})");
 
     const result = runHook(
       { tool_name: "MultiEdit", tool_input: { file_path: "src/index.js" } },
@@ -357,5 +364,106 @@ describe("pre_tool_use hook", () => {
       tmpDir
     );
     expect(result.exitCode).toBe(2);
+  });
+
+  // --- TDD Gate 集成测试 ---
+
+  test("Edit 实现文件 + ready_to_apply + 无测试 → exit 2（TDD gate）", () => {
+    const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
+    fs.mkdirSync(changeDir, { recursive: true });
+    fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+
+    const result = runHook({ tool_name: "Edit", tool_input: { file_path: "lib/foo.js" } }, tmpDir);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("[TDD]");
+  });
+
+  test("Edit 实现文件 + ready_to_apply + 有测试 → exit 0", () => {
+    const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
+    fs.mkdirSync(changeDir, { recursive: true });
+    fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+    // 创建对应测试文件
+    const testDir = path.join(tmpDir, "lib", "__tests__");
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(path.join(testDir, "foo.test.js"), "test('x', () => {})");
+
+    const result = runHook({ tool_name: "Edit", tool_input: { file_path: "lib/foo.js" } }, tmpDir);
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("Edit 测试文件 + ready_to_apply → exit 0（白名单）", () => {
+    const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
+    fs.mkdirSync(changeDir, { recursive: true });
+    fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+
+    const result = runHook({ tool_name: "Edit", tool_input: { file_path: "lib/foo.test.js" } }, tmpDir);
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("Edit 配置文件 + ready_to_apply → exit 0（白名单）", () => {
+    const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
+    fs.mkdirSync(changeDir, { recursive: true });
+    fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+
+    const result = runHook({ tool_name: "Edit", tool_input: { file_path: "package.json" } }, tmpDir);
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("TDD_SKIP=1 + 实现文件无测试 → exit 0", () => {
+    const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
+    fs.mkdirSync(changeDir, { recursive: true });
+    fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+
+    const result = runHook(
+      { tool_name: "Edit", tool_input: { file_path: "lib/foo.js" } },
+      tmpDir,
+      { TDD_SKIP: "1" }
+    );
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("Edit + not_initialized → exit 0（TDD gate 不激活）", () => {
+    // 无 openspec 目录 — 兼容模式，TDD gate 不应阻断
+    const result = runHook({ tool_name: "Edit", tool_input: { file_path: "lib/foo.js" } }, tmpDir);
+    expect(result.exitCode).toBe(0);
+  });
+
+  // --- Verify Gate 集成测试 ---
+
+  test("Bash archive mv 未 verify → 阻断（即使非源文件写操作）", () => {
+    // 创建 openspec 目录结构但不创建 .verify-state.json
+    const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
+    fs.mkdirSync(changeDir, { recursive: true });
+    fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+
+    const result = runHook(
+      { tool_name: "Bash", tool_input: { command: "mv openspec/changes/my-feature openspec/changes/archive/2026-04-02-my-feature" } },
+      tmpDir
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toMatch(/VERIFY GATE/);
+  });
+
+  test("Bash archive mv 已 verify → 放行", () => {
+    const changeDir = path.join(tmpDir, "openspec/changes/my-feature");
+    fs.mkdirSync(changeDir, { recursive: true });
+    fs.writeFileSync(path.join(changeDir, "tasks.md"), "# Tasks");
+    // 写入合法的 verify 状态文件；commit 用 "unknown" 因为 tmpDir 不是 git repo
+    // git 失败 → fail-closed，所以需要初始化 git
+    execSync("git init", { cwd: tmpDir, stdio: "ignore" });
+    execSync("git config user.email test@test.com", { cwd: tmpDir, stdio: "ignore" });
+    execSync("git config user.name test", { cwd: tmpDir, stdio: "ignore" });
+    execSync("git add -A && git commit -m init --allow-empty", { cwd: tmpDir, stdio: "ignore" });
+    const commit = execSync("git rev-parse --short HEAD", { cwd: tmpDir, encoding: "utf8" }).trim();
+    fs.writeFileSync(
+      path.join(changeDir, ".verify-state.json"),
+      JSON.stringify({ result: "pass", userConfirmed: true, commit, timestamp: new Date().toISOString() })
+    );
+
+    const result = runHook(
+      { tool_name: "Bash", tool_input: { command: "mv openspec/changes/my-feature openspec/changes/archive/2026-04-02-my-feature" } },
+      tmpDir
+    );
+    expect(result.exitCode).toBe(0);
   });
 });
