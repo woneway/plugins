@@ -221,7 +221,9 @@ if (spec.state === "ready_to_apply") {
     }
   } else if (toolName === "Bash") {
     const cmd = toolInput.command ?? "";
-    filePaths = extractWriteTargets(cmd);
+    filePaths = extractWriteTargets(cmd).map((t) =>
+      path.relative(repoRoot, path.resolve(repoRoot, t))
+    );
   }
 
   // 读取 current-change 标记（或从 spec.changes 自动推断）
@@ -292,8 +294,8 @@ function readChangeScopeAllowedPaths(repoRoot, changes) {
         const markerDir = path.join(repoRoot, runtimeDir);
         fs.mkdirSync(markerDir, { recursive: true });
         fs.writeFileSync(path.join(markerDir, "current-change"), changeName);
-      } catch {
-        // marker 写入失败不影响 scope 校验
+      } catch (e) {
+        process.stderr.write(`[WARN] change-scope: marker write failed - ${e.message}\n`);
       }
     } else {
       return null; // 多个 change 或无 change，fallback
@@ -317,7 +319,8 @@ function readChangeScopeAllowedPaths(repoRoot, changes) {
     }
 
     return paths;
-  } catch {
+  } catch (e) {
+    process.stderr.write(`[WARN] change-scope: tasks.md read failed - ${e.message}\n`);
     return null; // tasks.md 不可读，fallback
   }
 }

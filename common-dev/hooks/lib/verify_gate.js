@@ -193,11 +193,12 @@ function checkDirtyWorktree(changeName, changeDir, repoRoot) {
   }
 
   // change-scoped 检查：只看与 allowedPaths 重叠的文件
-  const scopedDirty = dirtyFiles.filter((f) =>
-    allowedPaths.some(
-      (p) => f === p || f.startsWith(p + "/") || p.startsWith(f.replace(/\/[^/]+$/, ""))
-    )
-  );
+  const scopedDirty = dirtyFiles.filter((f) => {
+    const fDir = f.replace(/\/[^/]+$/, "");
+    return allowedPaths.some(
+      (p) => f === p || f.startsWith(p + "/") || (fDir !== f && (p === fDir || p.startsWith(fDir + "/")))
+    );
+  });
 
   if (scopedDirty.length > 0) {
     return {
