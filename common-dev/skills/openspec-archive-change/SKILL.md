@@ -67,6 +67,10 @@ Archive a completed change in the experimental workflow.
 
 5. **Perform the archive**
 
+   > **注意（verify gate）**：verify 状态由 hook 层（`pre_tool_use.js`）强制检查，
+   > 不依赖 skill 文本。若未运行 `/opsx:verify` 或 verify 未通过，下面的 `mv` 命令
+   > 将被系统层阻断。请在运行 archive 前先执行 `/opsx:verify`。
+
    Create the archive directory if it doesn't exist:
    ```bash
    mkdir -p openspec/changes/archive
@@ -81,6 +85,8 @@ Archive a completed change in the experimental workflow.
    ```bash
    mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
    ```
+
+   若上述 `mv` 命令被 hook 阻断，说明 verify 未通过或状态文件已过期，请运行 `/opsx:verify` 后重试。
 
 6. **Display summary**
 

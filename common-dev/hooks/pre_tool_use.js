@@ -14,6 +14,7 @@ const { execSync } = require("child_process");
 const { getOpenSpecState, isOpenSpecPath } = require("./lib/openspec");
 const { checkApiKeyInDiff, checkApiKeyInContent } = require("./lib/api_key_check");
 const { isBashWriteCommand, hasNonOpenSpecWriteTarget, extractWriteTargets } = require("./lib/bash_write_detector");
+const { checkVerifyGate } = require("./lib/verify_gate");
 
 // --- 读取 stdin ---
 
@@ -161,6 +162,17 @@ if (process.env.OPENSPEC_SKIP === "1") {
     // 日志写入失败不阻断
   }
   process.exit(0);
+}
+
+// --- 4b. Verify Gate（archive mv 命令检查） ---
+
+if (toolName === "Bash") {
+  const cmd = toolInput.command ?? "";
+  const vg = checkVerifyGate(cmd, repoRoot);
+  if (vg && vg.block) {
+    process.stderr.write(vg.reason + "\n");
+    process.exit(2);
+  }
 }
 
 // --- 5. OpenSpec 工作流门禁 ---
