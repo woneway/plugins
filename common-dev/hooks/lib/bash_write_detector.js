@@ -68,8 +68,8 @@ function extractWriteTargets(cmd) {
     if (parts.length > 0) targets.push(parts[parts.length - 1]);
   }
 
-  // install 目标（排除包管理器前缀：npm/pip/brew/apt/yum/gem/cargo/pnpm/bun）
-  const installMatch = cmd.match(/(?<!\b(?:npm|pip|pip3|brew|apt|apt-get|yum|gem|cargo|pnpm|bun)\s)\binstall\s+(.+?)(?:\||;|&&|$)/);
+  // install 目标（要求 install 为独立命令，排除路径中的子串和包管理器前缀）
+  const installMatch = cmd.match(/(?:^|[|;&]\s*)(?!npm|pip|pip3|brew|apt|apt-get|yum|gem|cargo|pnpm|bun)\binstall\s+(.+?)(?:\||;|&&|$)/);
   if (installMatch) {
     const parts = installMatch[1].trim().split(/\s+/).filter(p => !p.startsWith("-"));
     if (parts.length > 0) targets.push(parts[parts.length - 1]);
@@ -100,6 +100,13 @@ const REDIRECT_WRITE_INDICATOR = /(?<![0-9])>{1,2}/;
 const CODE_WRITE_INDICATOR = /\bwrite\w*\(|\bopen\s*\(|\bfs[.'"]|\bwriteFile/;
 
 function isBashWriteCommand(cmd) {
+  // git 命令豁免：纯 git 操作不属于源文件写入
+  // 仅当命令只包含 git 子命令时豁免；git 链接其他命令（&&、;、|、>）时继续检测
+  if (/^\s*git\s/.test(cmd) && !/[;&|>]/.test(cmd)) return false;
+
+  // gh/glab CLI 豁免：GitHub/GitLab CLI 操作与远程 API 交互，不写入项目源文件
+  if (/^\s*(?:gh|glab)\s/.test(cmd)) return false;
+
   // sed -i（就地编辑）始终视为写操作
   if (/\bsed\s+(-[a-zA-Z]*i|--in-place)/.test(cmd)) return true;
 
