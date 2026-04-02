@@ -5,7 +5,19 @@
   "capabilities": {
     "skills": "skills/",
     "agents": "agents/",
-    "commands": "commands/"
+    "commands": "commands/",
+    "rules": "rules/"
   },
-  "hooks": "hooks/hooks.json"
+  "hooks": "hooks/hooks.json",
+  "commands_help": {
+    "reinstall": {
+      "description": "Reinstall this plugin after source code changes",
+      "usage": "node ~/ai/plugins/bin/plugins.js install common-dev --cli claude,codex --env user",
+      "when": "After modifying hook source files (hooks/*.js, hooks/lib/*.js)"
+    },
+    "uninstall": {
+      "description": "Remove this plugin",
+      "usage": "node ~/ai/plugins/bin/plugins.js uninstall common-dev --cli claude,codex --env user"
+    }
+  }
 }
