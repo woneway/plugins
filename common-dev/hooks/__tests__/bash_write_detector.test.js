@@ -134,6 +134,26 @@ describe("isBashWriteCommand", () => {
     expect(isBashWriteCommand("bash -c 'echo hello'")).toBe(false);
   });
 
+  // --- eval/bash -c 写外部路径不触发 ---
+  test("eval 'echo >> ~/.gstack/analytics/usage.jsonl' → false（外部路径非源文件）", () => {
+    expect(isBashWriteCommand("eval \"echo data >> ~/.gstack/analytics/usage.jsonl\"")).toBe(false);
+  });
+
+  test("bash -c 'touch ~/.gstack/sessions/12345' → false（外部路径非源文件）", () => {
+    expect(isBashWriteCommand("bash -c 'touch ~/.gstack/sessions/12345'")).toBe(false);
+  });
+
+  // --- eval 无法解析目标时保守触发 ---
+  test("eval with write indicator but no extractable targets → true（保守行为）", () => {
+    // eval 内部有写指示符，extractWriteTargets 无法提取任何目标 → 保守返回 true
+    expect(isBashWriteCommand("eval \"$(complex_command)\" && writeFile")).toBe(true);
+  });
+
+  test("eval with redirect to non-source file → false（目标非源文件）", () => {
+    // eval 有 > 重定向，但目标不匹配源文件模式
+    expect(isBashWriteCommand("eval \"$(complex_command)\" > something")).toBe(false);
+  });
+
   // --- 新增模式：脚本解释器 ---
   test("python -c \"open('src/hack.py','w').write('x')\" → true", () => {
     expect(isBashWriteCommand("python -c \"open('src/hack.py','w').write('x')\"")).toBe(true);
@@ -145,6 +165,17 @@ describe("isBashWriteCommand", () => {
 
   test("python -c 'print(hello)' → false（无写关键词）", () => {
     expect(isBashWriteCommand("python -c 'print(hello)'")).toBe(false);
+  });
+
+  // --- 脚本解释器内部写操作无法静态提取，保守判定 ---
+  test("node -e writeFileSync 内部路径无法提取 → true（保守行为）", () => {
+    // writeFileSync 的目标在 JS 字符串内部，extractWriteTargets 无法提取，保守返回 true
+    expect(isBashWriteCommand("node -e \"require('fs').writeFileSync('/Users/x/.gstack/data.json','y')\"")).toBe(true);
+  });
+
+  // --- 脚本解释器 + 外层重定向到非源文件路径 ---
+  test("node -e with redirect to external path → false", () => {
+    expect(isBashWriteCommand("node -e \"console.log('hi')\" > ~/.gstack/output.log")).toBe(false);
   });
 
   // --- fd 重定向不误判 ---

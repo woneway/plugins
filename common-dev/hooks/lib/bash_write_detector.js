@@ -107,12 +107,21 @@ function isBashWriteCommand(cmd) {
 
   // 子 shell 模式：bash -c / sh -c / eval + 写关键词
   if (/\b(?:bash|sh)\s+-c\s/.test(cmd) || /\beval\s/.test(cmd)) {
-    if (WRITE_INDICATORS.test(cmd)) return true;
+    if (WRITE_INDICATORS.test(cmd)) {
+      const targets = extractWriteTargets(cmd);
+      if (targets.length === 0) return true; // 无法提取目标，保守判定
+      if (targets.some(t => isSourceTarget(t))) return true;
+      // 有目标但都不是源文件，不判定为写操作
+    }
   }
 
   // 脚本解释器模式：python -c / node -e / ruby -e / perl -e + 写关键词
   if (/\b(?:python3?|node|ruby|perl)\s+-[ce]\b/.test(cmd)) {
-    if (WRITE_INDICATORS.test(cmd)) return true;
+    if (WRITE_INDICATORS.test(cmd)) {
+      const targets = extractWriteTargets(cmd);
+      if (targets.length === 0) return true; // 无法提取目标，保守判定
+      if (targets.some(t => isSourceTarget(t))) return true;
+    }
   }
 
   // 检查提取的写入目标是否包含源文件

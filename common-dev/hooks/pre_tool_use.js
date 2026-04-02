@@ -13,7 +13,7 @@ const path = require("path");
 const { execSync } = require("child_process");
 const { getOpenSpecState, isOpenSpecPath } = require("./lib/openspec");
 const { checkApiKeyInDiff, checkApiKeyInContent } = require("./lib/api_key_check");
-const { isBashWriteCommand, hasNonOpenSpecWriteTarget } = require("./lib/bash_write_detector");
+const { isBashWriteCommand, hasNonOpenSpecWriteTarget, extractWriteTargets } = require("./lib/bash_write_detector");
 
 // --- 读取 stdin ---
 
@@ -111,6 +111,18 @@ if (["Edit", "Write", "MultiEdit", "NotebookEdit"].includes(toolName)) {
   const resolved = path.resolve(repoRoot, filePath);
   const rel = path.relative(repoRoot, resolved);
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    process.exit(0);
+  }
+}
+
+if (toolName === "Bash") {
+  const cmd = toolInput.command ?? "";
+  const targets = extractWriteTargets(cmd);
+  if (targets.length > 0 && targets.every(t => {
+    const resolved = path.resolve(repoRoot, t);
+    const rel = path.relative(repoRoot, resolved);
+    return rel.startsWith("..") || path.isAbsolute(rel);
+  })) {
     process.exit(0);
   }
 }
