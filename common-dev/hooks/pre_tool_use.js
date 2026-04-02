@@ -278,7 +278,8 @@ function readChangeScopeAllowedPaths(repoRoot, changes) {
     try {
       const markerPath = path.join(repoRoot, dir, "current-change");
       changeName = fs.readFileSync(markerPath, "utf8").trim();
-      if (changeName) break;
+      if (changeName && /^[a-zA-Z0-9_\-]+$/.test(changeName)) break;
+      changeName = null; // 非法名称，视为无效
     } catch {
       // 文件不存在，继续尝试下一个
     }
