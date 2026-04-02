@@ -15,11 +15,13 @@ const SOURCE_DIRS = /\b(src|lib|app|components|hooks|pages|routes|api|services|m
 function extractWriteTargets(cmd) {
   const targets = [];
 
-  // 重定向目标 (> file, >> file)
-  // 排除 fd 重定向：数字>/dev/null、数字>&数字（如 2>/dev/null、2>&1）
-  for (const m of cmd.matchAll(/(?<![0-9])>{1,2}\s*(\S+)/g)) {
-    if (m[1].startsWith("&")) continue; // 排除 >&2 等 fd 复制
-    targets.push(m[1]);
+  // 重定向目标 (> file, >> file, 1>file, 2>file)
+  // 匹配所有重定向，后处理排除 fd-to-null、fd-to-fd
+  for (const m of cmd.matchAll(/>{1,2}\s*(\S+)/g)) {
+    const target = m[1];
+    if (target.startsWith("&")) continue; // 排除 >&2、>&-  等 fd 复制
+    if (/^\/dev\//.test(target)) continue; // 排除 >/dev/null 等
+    targets.push(target);
   }
 
   // cp/mv 目标（最后一个参数）
@@ -93,7 +95,9 @@ function isSourceTarget(target) {
  * @returns {boolean}
  */
 // 写操作关键词（用于子 shell / 脚本解释器的保守检测）
-const WRITE_INDICATORS = /[>]|>>|\bwrite\w*\(|\bopen\s*\(|\bfs[.'"]|\bwriteFile/;
+// 拆分为两类：shell 重定向 vs 代码级写 API
+const REDIRECT_WRITE_INDICATOR = /(?<![0-9])>{1,2}/;
+const CODE_WRITE_INDICATOR = /\bwrite\w*\(|\bopen\s*\(|\bfs[.'"]|\bwriteFile/;
 
 function isBashWriteCommand(cmd) {
   // sed -i（就地编辑）始终视为写操作
@@ -107,20 +111,32 @@ function isBashWriteCommand(cmd) {
 
   // 子 shell 模式：bash -c / sh -c / eval + 写关键词
   if (/\b(?:bash|sh)\s+-c\s/.test(cmd) || /\beval\s/.test(cmd)) {
-    if (WRITE_INDICATORS.test(cmd)) {
+    const hasRedirect = REDIRECT_WRITE_INDICATOR.test(cmd);
+    const hasCodeWrite = CODE_WRITE_INDICATOR.test(cmd);
+    if (hasRedirect || hasCodeWrite) {
       const targets = extractWriteTargets(cmd);
-      if (targets.length === 0) return true; // 无法提取目标，保守判定
-      if (targets.some(t => isSourceTarget(t))) return true;
+      if (targets.length === 0) {
+        // 无法提取目标：仅在检测到代码级写 API 时保守判定
+        if (hasCodeWrite) return true;
+        // 仅有 shell 重定向（如 2>/dev/null）且提不到目标，不判写
+      } else if (targets.some(t => isSourceTarget(t))) {
+        return true;
+      }
       // 有目标但都不是源文件，不判定为写操作
     }
   }
 
   // 脚本解释器模式：python -c / node -e / ruby -e / perl -e + 写关键词
   if (/\b(?:python3?|node|ruby|perl)\s+-[ce]\b/.test(cmd)) {
-    if (WRITE_INDICATORS.test(cmd)) {
+    const hasRedirect = REDIRECT_WRITE_INDICATOR.test(cmd);
+    const hasCodeWrite = CODE_WRITE_INDICATOR.test(cmd);
+    if (hasRedirect || hasCodeWrite) {
       const targets = extractWriteTargets(cmd);
-      if (targets.length === 0) return true; // 无法提取目标，保守判定
-      if (targets.some(t => isSourceTarget(t))) return true;
+      if (targets.length === 0) {
+        if (hasCodeWrite) return true;
+      } else if (targets.some(t => isSourceTarget(t))) {
+        return true;
+      }
     }
   }
 
