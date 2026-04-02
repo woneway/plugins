@@ -12,8 +12,16 @@
 - **THEN** hook SHALL 放行
 
 #### Scenario: 写测试文件本身
-- **WHEN** 写操作目标匹配 `*.test.js`、`*.spec.js` 或 `__tests__/**`
-- **THEN** hook SHALL 放行（测试文件不受 TDD gate 约束）
+- **WHEN** 写操作目标匹配以下任一模式，hook SHALL 放行（测试文件不受 TDD gate 约束）：
+  - JS/TS: `*.test.[jt]sx?`、`*.spec.[jt]sx?`、`__tests__/**`
+  - Java: `*Test.java`、`*Tests.java`、`*IT.java`、`src/test/**`
+  - Python: `test_*.py`、`*_test.py`
+  - Go: `*_test.go`
+  - Ruby: `*_spec.rb`
+  - Rust: 路径包含 `/tests/`（Rust integration tests 目录）
+  - C#: `*Tests.cs`、`*Test.cs`
+  - 通用测试目录: `tests/`、`test/`、`spec/`、`__tests__/`
+- **THEN** hook SHALL 放行
 
 #### Scenario: 写配置文件
 - **WHEN** 写操作目标为 `package.json`、`*.config.js`、`*.config.ts`、`.eslintrc*`、`.prettierrc*`

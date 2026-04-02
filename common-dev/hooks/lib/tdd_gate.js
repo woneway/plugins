@@ -9,10 +9,27 @@ const path = require("path");
 
 // 白名单模式：这些文件不需要对应测试
 const WHITELIST_PATTERNS = [
-  // 测试文件本身
+  // 测试文件 — JS/TS
   /\.test\.[jt]sx?$/,
   /\.spec\.[jt]sx?$/,
   /__tests__\//,
+  // 测试文件 — Java
+  /Test\.java$/,
+  /Tests\.java$/,
+  /IT\.java$/,
+  // 测试文件 — Python
+  /^test_.*\.py$/,
+  /_test\.py$/,
+  // 测试文件 — Go
+  /_test\.go$/,
+  // 测试文件 — Ruby
+  /_spec\.rb$/,
+  // 测试文件 — C#
+  /Tests?\.cs$/,
+  // 通用测试目录
+  /^src\/test\//,
+  /^tests?\//,
+  /^spec\//,
   // 配置文件
   /^\.?[a-z].*\.config\.[jt]s$/,  // jest.config.js, babel.config.ts, etc.
   /\.config\.[jt]sx?$/,

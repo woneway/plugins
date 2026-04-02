@@ -96,6 +96,66 @@ describe("checkTddGate", () => {
     expect(checkTddGate("bin/cli.js", tmpDir, "ready_to_apply")).toBeNull();
   });
 
+  // --- 多语言测试文件白名单 ---
+
+  test("Java 测试文件放行：*Test.java", () => {
+    expect(checkTddGate("src/test/java/com/example/FooTest.java", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("Java 测试文件放行：*Tests.java", () => {
+    expect(checkTddGate("FooTests.java", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("Java 集成测试放行：*IT.java", () => {
+    expect(checkTddGate("FooIT.java", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("Python 测试放行：test_*.py", () => {
+    expect(checkTddGate("test_foo.py", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("Python 测试放行：*_test.py", () => {
+    expect(checkTddGate("foo_test.py", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("Go 测试放行：*_test.go", () => {
+    expect(checkTddGate("foo_test.go", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("Ruby spec 放行：*_spec.rb", () => {
+    expect(checkTddGate("foo_spec.rb", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("C# 测试放行：*Tests.cs", () => {
+    expect(checkTddGate("FooTests.cs", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("C# 测试放行：*Test.cs", () => {
+    expect(checkTddGate("FooTest.cs", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  // --- 通用测试目录白名单 ---
+
+  test("src/test/ 目录放行", () => {
+    expect(checkTddGate("src/test/java/com/example/Foo.java", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("tests/ 目录放行", () => {
+    expect(checkTddGate("tests/test_integration.py", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("test/ 目录放行", () => {
+    expect(checkTddGate("test/helper.js", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("spec/ 目录放行", () => {
+    expect(checkTddGate("spec/models/user_spec.rb", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
+  test("Rust tests/ 目录放行", () => {
+    expect(checkTddGate("tests/integration_test.rs", tmpDir, "ready_to_apply")).toBeNull();
+  });
+
   // --- 3.2: test file lookup ---
 
   test("__tests__/<name>.test.js 存在时放行", () => {
