@@ -5,7 +5,6 @@
   "capabilities": {
     "skills": "skills/",
     "agents": "agents/",
-    "rules": "rules/",
     "commands": "commands/"
   },
   "hooks": "hooks/hooks.json"

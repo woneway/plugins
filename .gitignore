@@ -4,3 +4,4 @@ coverage/
 .claude/
 .codex/
 *.log
+.DS_Store

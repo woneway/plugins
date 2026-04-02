@@ -5,22 +5,27 @@ TBD - created by archiving change plugins-clean-refactor. Update Purpose after a
 ## Requirements
 ### Requirement: plugin.json capabilities 对象映射格式
 
-plugin.json 的 capabilities 字段 SHALL 为对象映射格式，每个 key 是 capability 类型（skills/agents/rules/commands），value 是相对于插件根目录的源目录路径。
+plugin.json 的 capabilities 字段 SHALL 为对象映射格式，每个 key 是 capability 类型（skills/agents/commands），value 是相对于插件根目录的源目录路径。capabilities 中 SHALL NOT 声明不存在的源目录。
 
 #### Scenario: 标准 plugin.json 格式
 
-- **WHEN** 插件的 plugin.json 包含 capabilities 对象 `{"skills": "skills/", "agents": "agents/", "rules": "rules/", "commands": "commands/"}`
-- **THEN** 安装器 SHALL 识别 4 个 capability 并按声明处理
+- **WHEN** 插件的 plugin.json 包含 capabilities 对象 `{"skills": "skills/", "agents": "agents/", "commands": "commands/"}`
+- **THEN** 安装器 SHALL 识别 3 个 capability 并按声明处理
 
 #### Scenario: 部分 capability 声明
 
-- **WHEN** 插件的 plugin.json 只声明 `{"skills": "skills/", "rules": "rules/"}`
-- **THEN** 安装器 SHALL 只安装 skills 和 rules，不处理未声明的 agents 和 commands
+- **WHEN** 插件的 plugin.json 只声明 `{"skills": "skills/"}`
+- **THEN** 安装器 SHALL 只安装 skills，不处理未声明的 agents 和 commands
 
 #### Scenario: 空 capabilities
 
 - **WHEN** 插件的 plugin.json 的 capabilities 为空对象 `{}`
 - **THEN** 安装器 SHALL 不安装任何内容，但仍记录安装状态
+
+#### Scenario: capability 指向不存在的目录
+
+- **WHEN** plugin.json 声明 `"rules": "rules/"` 但 `rules/` 目录不存在
+- **THEN** 安装器 SHALL 跳过该 capability（不报错），但 plugin.json SHOULD NOT 声明不存在的目录
 
 ### Requirement: plugin.json 不声明 hooks
 
