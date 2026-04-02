@@ -7,7 +7,6 @@ Codex / Claude Code plugin：OpenSpec 工作流门禁 + API Key 安全保护。
 在 `~/ai/plugins` 仓库根目录运行：
 
 ```bash
-node bin/plugins.js refresh-source common-dev --source gstack,ecc,openspec
 node bin/plugins.js install common-dev --cli codex,claude --env user
 node bin/plugins.js update common-dev --cli codex,claude --env user
 node bin/plugins.js uninstall common-dev --cli codex,claude --env user
@@ -18,70 +17,33 @@ node bin/plugins.js uninstall common-dev --cli codex,claude --env user
 - `--cli` 目前支持 `codex`、`claude`
 - `--env` 支持 `user` 或 `project`
 
-当前 `common-dev` 会分发到目标环境的能力：
-- `rules`
-- `agents`
-- `mcp`
+当前 `common-dev` 分发的能力（由 `plugin.json` 声明）：
 - `skills`
+- `agents`
 - `commands`
 
-真实安装逻辑以 `common-dev/scripts/setup.js` 为准。
-
-工作模型分两层：
-- `refresh-source`：把 `gstack / ECC / OpenSpec` 固化到 `common-dev/sources/`
-- `install / update / uninstall`：只读取 `common-dev/sources/`，不在安装时联网拉上游
-
-当前来源定义：
-- `gstack`：按脚本内清单选择 skill，安装到 Claude/Codex 对应环境
-- `ECC`：按脚本内清单选择 agent，安装到 Claude/Codex 对应环境
-- `OpenSpec`：分发 `common-dev/sources/openspec` 内固化的 `opsx` commands 与 OpenSpec skills，并检测 `openspec` CLI
-- `custom`：分发 `common-dev/sources/custom` 内自己维护的内容；当前只接 `rules/common.md`
-- `mcp`：当前先保留目标目录，不分发内置内容
-
-默认上游只在 `refresh-source` 阶段使用：
-- `gstack`: `git@github.com:garrytan/gstack.git`
-- `ECC`: `git@github.com:affaan-m/everything-claude-code.git`
-
-`custom` 是仓库内直接维护的来源，不走 `refresh-source`。
+安装后另提供 hooks（由 Claude Code / Codex 原生插件系统管理，不在 capabilities 中声明）。
 
 ## 安装
 
-当前仓库同时提供两套 marketplace / manifest：
-
-- Claude Code：`/Users/lianwu/ai/plugins/.claude-plugin/marketplace.json`
-- Codex：`/Users/lianwu/ai/plugins/.agents/plugins/marketplace.json`
-
 ### Codex
-
-Codex 侧 manifest 位于：
-
-```text
-common-dev/.codex-plugin/plugin.json
-```
 
 Codex marketplace 位于：
 
 ```text
-~\/ai/plugins/.agents/plugins/marketplace.json
+~/ai/plugins/.agents/plugins/marketplace.json
 ```
 
 ### Claude Code
 
 Claude Code 通过 **marketplace → plugin** 两步机制管理插件。
 
-### 第一步：注册 marketplace
-
-Marketplace 是插件的索引源。本插件所在目录 (`~/ai/plugins`) 已配置为一个本地 marketplace（含 `.claude-plugin/marketplace.json`）。
+#### 第一步：注册 marketplace
 
 ```bash
 # 注册本地 marketplace（只需执行一次）
 claude plugin marketplace add ~/ai/plugins
 ```
-
-> 也支持 GitHub 仓库作为 marketplace：
-> ```bash
-> claude plugin marketplace add github:user/repo
-> ```
 
 注册后可验证：
 
@@ -89,7 +51,7 @@ claude plugin marketplace add ~/ai/plugins
 claude plugin marketplace list
 ```
 
-### 第二步：安装 plugin
+#### 第二步：安装 plugin
 
 ```bash
 # 全局安装（所有项目生效，推荐）
@@ -99,39 +61,24 @@ claude plugin install common-dev -s user
 claude plugin install common-dev -s project
 ```
 
-> 如果多个 marketplace 含同名 plugin，用 `@` 指定来源：
-> ```bash
-> claude plugin install common-dev@lianwu-plugins -s user
-> ```
-
 安装后可验证：
 
 ```bash
 claude plugin list
 ```
 
-### 第三步：安装依赖工具链
+#### 第三步：安装依赖工具链
 
 ```bash
 node ~/ai/plugins/bin/plugins.js install common-dev --cli claude,codex --env user
 ```
 
 自动安装：
-- **gstack skills**（按 `setup.js` 清单选择）— 产品层 + 工程质量层 + 设计层
+- **gstack skills** — 产品层 + 工程质量层 + 设计层
 - **ECC agents** (3 个) — tdd-guide、security-reviewer、build-error-resolver
 - **OpenSpec commands / skills** — `opsx` commands + OpenSpec workflow skills
-- **OpenSpec CLI 检测** — 未安装时提示手动安装
 
-刷新本地快照时可通过环境变量覆盖来源目录，但入口仍然统一走 `plugins`：
-
-```bash
-COMMON_DEV_GSTACK_SOURCE_DIR=/path/to/gstack \
-COMMON_DEV_ECC_SOURCE_DIR=/path/to/ecc \
-COMMON_DEV_OPENSPEC_SOURCE_DIR=/path/to/openspec-assets \
-node ~/ai/plugins/bin/plugins.js refresh-source common-dev --source gstack,ecc,openspec
-```
-
-### 第四步（可选）：启用 OpenSpec 变更管理
+#### 第四步（可选）：启用 OpenSpec 变更管理
 
 ```bash
 npm install -g @fission-ai/openspec@latest
@@ -160,31 +107,6 @@ claude plugin validate <path>                           # 验证 manifest
 
 # 临时加载（不安装，仅当次会话）
 claude --plugin-dir ~/ai/plugins/common-dev
-```
-
-## Plugin 开发结构
-
-一个合法的 Claude Code plugin 需要：
-
-```
-my-plugin/
-├── .claude-plugin/
-│   └── plugin.json       # 必需：插件元数据（name, version, description）
-├── hooks/
-│   ├── hooks.json        # 必需：hook 注册（哪些事件触发哪些脚本）
-│   └── *.js              # hook 脚本
-└── CLAUDE.md             # 可选：Claude Code 行为指引
-```
-
-一个 marketplace 目录需要：
-
-```
-my-marketplace/
-├── .claude-plugin/
-│   └── marketplace.json  # 必需：索引所有 plugin（name, source 路径）
-├── plugin-a/             # plugin 目录
-├── plugin-b/
-└── ...
 ```
 
 ## 工作原理
