@@ -183,6 +183,292 @@ test("installer: 未安装的插件卸载时跳过", async () => {
   }
 });
 
+test("installer: hooks 安装复制文件并合并 settings.json", async () => {
+  const tempDir = createTempDir();
+  const previousCwd = process.cwd();
+  process.chdir(tempDir);
+
+  try {
+    const installResults = await installPlugin({
+      action: "install",
+      pluginName: "hooks-plugin",
+      cliList: ["claude"],
+      envName: "project",
+      dryRun: false,
+      baseDir: getFixturesRoot(),
+    });
+
+    assert.equal(installResults.length, 1);
+
+    // Hook 文件已复制
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/hooks/hooks-plugin/test_hook.js")), true);
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/hooks/hooks-plugin/lib/helper.js")), true);
+
+    // __tests__ 和 hooks.json 未复制
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/hooks/hooks-plugin/__tests__")), false);
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/hooks/hooks-plugin/hooks.json")), false);
+
+    // settings.json 已合并
+    const settings = JSON.parse(fs.readFileSync(path.join(tempDir, ".claude/settings.json"), "utf8"));
+    assert.ok(settings.hooks);
+    assert.ok(settings.hooks.PreToolUse);
+    assert.equal(settings.hooks.PreToolUse.length, 2);
+    assert.equal(settings.hooks.PreToolUse[0].matcher, "Bash");
+    assert.ok(settings.hooks.SessionStart);
+    assert.equal(settings.hooks.SessionStart.length, 1);
+
+    // 命令路径已解析为绝对路径
+    const cmd = settings.hooks.PreToolUse[0].hooks[0].command;
+    assert.ok(!cmd.includes("${"), `命令不应包含 env var: ${cmd}`);
+    assert.ok(cmd.includes(path.join(tempDir, ".claude/hooks/hooks-plugin")));
+
+    // State 包含 registeredHooks
+    const state = JSON.parse(
+      fs.readFileSync(path.join(tempDir, ".plugins/state/hooks-plugin/claude.json"), "utf8")
+    );
+    assert.ok(state.registeredHooks);
+    assert.ok(state.registeredHooks.PreToolUse);
+    assert.ok(state.registeredHooks.SessionStart);
+
+    // Capability 文件也正常安装
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/rules/test-rule.md")), true);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("installer: hooks 安装幂等，重复安装不产生重复 entries", async () => {
+  const tempDir = createTempDir();
+  const previousCwd = process.cwd();
+  process.chdir(tempDir);
+
+  try {
+    await installPlugin({
+      action: "install",
+      pluginName: "hooks-plugin",
+      cliList: ["claude"],
+      envName: "project",
+      dryRun: false,
+      baseDir: getFixturesRoot(),
+    });
+
+    await installPlugin({
+      action: "install",
+      pluginName: "hooks-plugin",
+      cliList: ["claude"],
+      envName: "project",
+      dryRun: false,
+      baseDir: getFixturesRoot(),
+    });
+
+    const settings = JSON.parse(fs.readFileSync(path.join(tempDir, ".claude/settings.json"), "utf8"));
+    assert.equal(settings.hooks.PreToolUse.length, 2, "PreToolUse 应有 2 个 entries（Bash + Edit），不应重复");
+    assert.equal(settings.hooks.SessionStart.length, 1, "SessionStart 应有 1 个 entry，不应重复");
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("installer: hooks 卸载移除 entries 但保留其他 hooks", async () => {
+  const tempDir = createTempDir();
+  const previousCwd = process.cwd();
+  process.chdir(tempDir);
+
+  try {
+    // 预置一个 r2c hook
+    fs.mkdirSync(path.join(tempDir, ".claude"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, ".claude/settings.json"),
+      JSON.stringify({
+        hooks: {
+          PostToolUse: [
+            {
+              matcher: "Bash",
+              hooks: [{ type: "command", command: "bash /r2c/hook.sh", timeout: 15 }],
+            },
+          ],
+        },
+        effortLevel: "high",
+      }, null, 2) + "\n",
+      "utf8"
+    );
+
+    await installPlugin({
+      action: "install",
+      pluginName: "hooks-plugin",
+      cliList: ["claude"],
+      envName: "project",
+      dryRun: false,
+      baseDir: getFixturesRoot(),
+    });
+
+    // 确认合并后两种 hooks 共存
+    let settings = JSON.parse(fs.readFileSync(path.join(tempDir, ".claude/settings.json"), "utf8"));
+    assert.ok(settings.hooks.PostToolUse, "r2c hook 应存在");
+    assert.ok(settings.hooks.PreToolUse, "plugin hook 应存在");
+
+    await uninstallPlugin({
+      action: "uninstall",
+      pluginName: "hooks-plugin",
+      cliList: ["claude"],
+      envName: "project",
+      dryRun: false,
+      baseDir: getFixturesRoot(),
+    });
+
+    // Hook 文件已删除
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/hooks/hooks-plugin/test_hook.js")), false);
+
+    // r2c hook 保留，plugin hooks 移除
+    settings = JSON.parse(fs.readFileSync(path.join(tempDir, ".claude/settings.json"), "utf8"));
+    assert.ok(settings.hooks.PostToolUse, "r2c hook 应保留");
+    assert.equal(settings.hooks.PostToolUse.length, 1);
+    assert.equal(settings.hooks.PreToolUse, undefined, "plugin PreToolUse 应已移除");
+    assert.equal(settings.hooks.SessionStart, undefined, "plugin SessionStart 应已移除");
+
+    // 其他 settings 保留
+    assert.equal(settings.effortLevel, "high");
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("installer: hooks dry-run 不修改文件", async () => {
+  const tempDir = createTempDir();
+  const previousCwd = process.cwd();
+  process.chdir(tempDir);
+
+  try {
+    const results = await installPlugin({
+      action: "install",
+      pluginName: "hooks-plugin",
+      cliList: ["claude"],
+      envName: "project",
+      dryRun: true,
+      baseDir: getFixturesRoot(),
+    });
+
+    assert.match(results[0].message, /dry-run/);
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/hooks/hooks-plugin")), false);
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/settings.json")), false);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("installer: codex hooks 复制文件并写入独立 hooks.json", async () => {
+  const tempDir = createTempDir();
+  const previousCwd = process.cwd();
+  process.chdir(tempDir);
+
+  try {
+    await installPlugin({
+      action: "install",
+      pluginName: "hooks-plugin",
+      cliList: ["codex"],
+      envName: "project",
+      dryRun: false,
+      baseDir: getFixturesRoot(),
+    });
+
+    // Hook 文件已复制到 codex
+    assert.equal(fs.existsSync(path.join(tempDir, ".codex/hooks/hooks-plugin/test_hook.js")), true);
+    assert.equal(fs.existsSync(path.join(tempDir, ".codex/hooks/hooks-plugin/lib/helper.js")), true);
+
+    // Codex 使用独立的 hooks.json（��是 settings.json）
+    assert.equal(fs.existsSync(path.join(tempDir, ".codex/settings.json")), false);
+    assert.equal(fs.existsSync(path.join(tempDir, ".codex/hooks.json")), true);
+
+    const hooksFile = JSON.parse(fs.readFileSync(path.join(tempDir, ".codex/hooks.json"), "utf8"));
+    assert.ok(hooksFile.hooks);
+    assert.ok(hooksFile.hooks.PreToolUse);
+    assert.equal(hooksFile.hooks.PreToolUse.length, 2);
+    assert.ok(hooksFile.hooks.SessionStart);
+
+    // 命令路径指向 codex 目录
+    const cmd = hooksFile.hooks.PreToolUse[0].hooks[0].command;
+    assert.ok(cmd.includes(path.join(tempDir, ".codex/hooks/hooks-plugin")));
+
+    // State 包含 registeredHooks
+    const state = JSON.parse(
+      fs.readFileSync(path.join(tempDir, ".plugins/state/hooks-plugin/codex.json"), "utf8")
+    );
+    assert.ok(state.registeredHooks);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("installer: codex hooks 卸载清理 hooks.json", async () => {
+  const tempDir = createTempDir();
+  const previousCwd = process.cwd();
+  process.chdir(tempDir);
+
+  try {
+    await installPlugin({
+      action: "install",
+      pluginName: "hooks-plugin",
+      cliList: ["codex"],
+      envName: "project",
+      dryRun: false,
+      baseDir: getFixturesRoot(),
+    });
+
+    await uninstallPlugin({
+      action: "uninstall",
+      pluginName: "hooks-plugin",
+      cliList: ["codex"],
+      envName: "project",
+      dryRun: false,
+      baseDir: getFixturesRoot(),
+    });
+
+    // Hook 文件已删除
+    assert.equal(fs.existsSync(path.join(tempDir, ".codex/hooks/hooks-plugin/test_hook.js")), false);
+
+    // hooks.json 中 hooks 已清空
+    const hooksFile = JSON.parse(fs.readFileSync(path.join(tempDir, ".codex/hooks.json"), "utf8"));
+    assert.equal(hooksFile.hooks, undefined);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("installer: 无 hooks 插件向后兼容", async () => {
+  const tempDir = createTempDir();
+  const previousCwd = process.cwd();
+  process.chdir(tempDir);
+
+  try {
+    await installPlugin({
+      action: "install",
+      pluginName: "file-plugin",
+      cliList: ["claude"],
+      envName: "project",
+      dryRun: false,
+      baseDir: getFixturesRoot(),
+    });
+
+    // 不应创建 settings.json 或 hooks 目录
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/settings.json")), false);
+    assert.equal(fs.existsSync(path.join(tempDir, ".claude/hooks")), false);
+
+    const state = JSON.parse(
+      fs.readFileSync(path.join(tempDir, ".plugins/state/file-plugin/claude.json"), "utf8")
+    );
+    assert.equal(state.registeredHooks, null);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("installer: version 可选，state 记录 null", async () => {
   const tempDir = createTempDir();
   const previousCwd = process.cwd();

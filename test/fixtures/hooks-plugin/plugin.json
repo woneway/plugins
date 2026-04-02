@@ -1,0 +1,9 @@
+{
+  "name": "hooks-plugin",
+  "version": "1.0.0",
+  "description": "Test fixture with hooks.",
+  "capabilities": {
+    "rules": "rules/"
+  },
+  "hooks": "hooks/hooks.json"
+}
